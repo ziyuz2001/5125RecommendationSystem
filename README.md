@@ -38,18 +38,20 @@ The project also satisfies the **mandatory classification/clustering requirement
 ## 2. Project Structure
 
 ```
-movie-recommender/
-│
+repo-root/
+├── ml-1m/                  # Bundled MovieLens 1M data used by the code
+│   ├── ratings.dat
+│   ├── movies.dat
+│   ├── users.dat
+│   └── README
 ├── data_loader.py          # Stage 0: Load .dat files, build SQLite database
 ├── eda.py                  # Stage 1: Exploratory Data Analysis + visualisations
 ├── clustering.py           # Stage 2: K-Means user clustering
 ├── recommender.py          # Stage 3: SVD / KNN / Content-Based / Hybrid models
 ├── evaluate.py             # Stage 4: RMSE, MAE, Precision@K, Recall@K evaluation
 ├── main.py                 # Pipeline runner (runs all stages or individual steps)
-│
 ├── requirements.txt        # Python dependencies
 ├── README.md               # This file
-│
 ├── movielens.db            # SQLite database (auto-generated on first run)
 └── plots/                  # All output charts (auto-generated)
     ├── 01_rating_distribution.png
@@ -65,16 +67,6 @@ movie-recommender/
     └── 11_precision_recall.png
 ```
 
-> **Note:** The raw data folder `ml-1m/` should be placed one level **above** the project folder:
-> ```
-> Downloads/
-> ├── ml-1m/
-> │   └── ml-1m/
-> │       ├── ratings.dat
-> │       ├── movies.dat
-> │       └── users.dat
-> └── movie-recommender/   ← project folder
-> ```
 
 ---
 
@@ -143,8 +135,9 @@ The dataset contains anonymous movie ratings collected from the MovieLens websit
 
 ### Run the entire pipeline at once
 
+Run commands from the repository root:
+
 ```bash
-cd movie-recommender
 python main.py
 ```
 

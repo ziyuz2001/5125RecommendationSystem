@@ -7,8 +7,9 @@ import os
 import sqlite3
 import pandas as pd
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'ml-1m', 'ml-1m')
-DB_PATH  = os.path.join(os.path.dirname(__file__), 'movielens.db')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'ml-1m')
+DB_PATH = os.path.join(BASE_DIR, 'movielens.db')
 
 
 # ---------------------------------------------------------------------------
