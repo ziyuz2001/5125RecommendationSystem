@@ -1,0 +1,215 @@
+text,label
+"I love sci-fi movies",positive
+"I like space adventures",positive
+"Give me futuristic stories",positive
+"I enjoy time travel plots",positive
+"I want something funny and light",positive
+"I like goofy comedies",positive
+"I enjoy witty banter",positive
+"I want a feel-good movie",positive
+"I like action-packed films",positive
+"Give me fast-paced action",positive
+"I enjoy superhero movies",positive
+"I like thrilling chase scenes",positive
+"I enjoy epic fantasy worlds",positive
+"I like magical adventures",positive
+"I want medieval fantasy",positive
+"I enjoy heroic quests",positive
+"I like romantic comedies",positive
+"Give me a sweet love story",positive
+"I enjoy charming romance",positive
+"I like heartfelt relationships",positive
+"I enjoy mystery stories",positive
+"Give me a smart whodunit",positive
+"I like detective movies",positive
+"I enjoy puzzle-like plots",positive
+"I like crime thrillers",positive
+"I enjoy heist movies",positive
+"Give me gangster dramas",positive
+"I like suspenseful crime stories",positive
+"I enjoy documentaries",positive
+"Give me something informative",positive
+"I like true stories",positive
+"I enjoy historical documentaries",positive
+"I love animated movies",positive
+"I enjoy Pixar films",positive
+"Give me creative animation",positive
+"I like family-friendly animation",positive
+"I enjoy musical movies",positive
+"I like classic Hollywood musicals",positive
+"Give me something with great songs",positive
+"I enjoy dance-heavy movies",positive
+"I like emotional dramas",positive
+"Give me a powerful character study",positive
+"I enjoy serious storytelling",positive
+"I like meaningful human stories",positive
+"I enjoy war movies",positive
+"I like military dramas",positive
+"Give me inspiring battle stories",positive
+"I enjoy historical war epics",positive
+"I like westerns",positive
+"Give me old-school cowboy movies",positive
+"I enjoy frontier stories",positive
+"I like rugged western adventures",positive
+"I enjoy film noir",positive
+"Give me moody black-and-white crime",positive
+"I like cynical detective stories",positive
+"I enjoy noir atmosphere",positive
+"I like courtroom dramas",positive
+"Give me legal thrillers",positive
+"I enjoy smart dialogue",positive
+"I like talky character-driven movies",positive
+"I enjoy coming-of-age stories",positive
+"Give me something warm and nostalgic",positive
+"I like bittersweet movies",positive
+"I enjoy uplifting endings",positive
+"I like Marvel movies",positive
+"I enjoy Star Wars movies",positive
+"Give me something like Harry Potter",positive
+"I like Lord of the Rings style fantasy",positive
+"I enjoy Batman movies",positive
+"I like James Bond films",positive
+"Give me a good mission movie",positive
+"I enjoy spy thrillers",positive
+"I like clever science fiction",positive
+"I enjoy alien contact stories",positive
+"Give me dystopian sci-fi",positive
+"I like robot movies",positive
+"I enjoy thoughtful animation",positive
+"Give me something visually imaginative",positive
+"I like DreamWorks animation too",positive
+"I enjoy family adventure movies",positive
+"I like sports movies",positive
+"Give me an underdog story",positive
+"I enjoy inspirational team movies",positive
+"I like boxing dramas",positive
+"I enjoy survival stories",positive
+"Give me wilderness adventure",positive
+"I like disaster movies",positive
+"I enjoy edge-of-your-seat tension",positive
+"I like quirky indie comedies",positive
+"Give me offbeat humor",positive
+"I enjoy dry comedy",positive
+"I like sarcastic characters",positive
+"I enjoy slow-burn mysteries",positive
+"Give me atmospheric thrillers",positive
+"I like psychological thrillers",positive
+"I enjoy twist endings",positive
+"I like holiday movies",positive
+"Give me something cozy",positive
+"I enjoy sentimental family stories",positive
+"I like movies that are easy to watch",positive
+"I hate horror",negative
+"I do not want gore",negative
+"Nothing too violent",negative
+"I am not into slasher movies",negative
+"I dislike jump scares",negative
+"I hate found footage films",negative
+"No zombies please",negative
+"I do not want demonic possession stories",negative
+"I hate slow dramas",negative
+"I am not in the mood for heavy sadness",negative
+"Nothing too depressing",negative
+"I dislike bleak endings",negative
+"I do not want crying all night",negative
+"I hate miserable character studies",negative
+"No war movies tonight",negative
+"I am not into military stories",negative
+"I dislike battlefield violence",negative
+"I do not want tragic war endings",negative
+"I hate cheesy romance",negative
+"I do not want love triangles",negative
+"Nothing too sappy",negative
+"I dislike melodramatic couples",negative
+"I am not into rom-com clichés",negative
+"No breakup movies please",negative
+"I hate childish movies",negative
+"Nothing too immature",negative
+"I do not want baby humor",negative
+"I dislike toilet jokes",negative
+"I am not into silly cartoons",negative
+"No talking animal movies",negative
+"I hate boring documentaries",negative
+"I do not want lecture-like movies",negative
+"Nothing too educational",negative
+"I dislike dry history lessons",negative
+"I am not into slow factual films",negative
+"No courtroom movies",negative
+"I hate musicals",negative
+"I do not want singing every five minutes",negative
+"Nothing too theatrical",negative
+"I dislike dance-heavy stories",negative
+"I am not into show tunes",negative
+"No opera-like drama",negative
+"I hate westerns",negative
+"I do not want cowboy movies",negative
+"Nothing with dusty desert towns",negative
+"I dislike frontier settings",negative
+"I am not into old west shootouts",negative
+"No horses and saloons please",negative
+"I hate superhero movies",negative
+"I do not want capes",negative
+"Nothing too comic-book-y",negative
+"I dislike origin stories",negative
+"I am not into multiverse plots",negative
+"No post-credit scene stuff",negative
+"I hate overly complicated sci-fi",negative
+"I do not want hard science jargon",negative
+"Nothing too confusing",negative
+"I dislike time loop headaches",negative
+"I am not into abstract space movies",negative
+"No robots with feelings tonight",negative
+"I hate crime movies with torture",negative
+"I do not want serial killer plots",negative
+"Nothing too disturbing",negative
+"I dislike grim police corruption stories",negative
+"I am not into violent gang films",negative
+"No prison brutality movies",negative
+"I hate predictable comedies",negative
+"I do not want cringe humor",negative
+"Nothing too corny",negative
+"I dislike mean-spirited jokes",negative
+"I am not into gross-out comedy",negative
+"No prank movie energy",negative
+"I hate slow-burn movies when nothing happens",negative
+"I do not want long quiet scenes",negative
+"Nothing too artsy",negative
+"I dislike overly symbolic films",negative
+"I am not into experimental pacing",negative
+"No three-hour meditations please",negative
+"I hate scary clowns",negative
+"I do not want haunted house movies",negative
+"Nothing with creepy dolls",negative
+"I dislike body horror",negative
+"I am not into occult stories",negative
+"No exorcism movies please",negative
+"I hate shark attack movies",negative
+"I do not want disaster cheese",negative
+"Nothing too loud and dumb",negative
+"I dislike dumb action movies",negative
+"I am not into endless explosions",negative
+"No macho one-liners all night",negative
+"I hate movies that are too childish",negative
+"I do not want Disney princess stuff",negative
+"Nothing too cute",negative
+"I dislike saccharine family movies",negative
+"I am not into cartoon sidekicks",negative
+"No childish fantasy please",negative
+"I hate Star Wars",negative
+"I do not want Marvel right now",negative
+"Nothing like Transformers",negative
+"I dislike Fast and Furious movies",negative
+"I am not into Harry Potter style magic school stories",negative
+"No Batman gloom tonight",negative
+"I hate James Bond sexism",negative
+"I do not want Mission Impossible spectacle",negative
+"Nothing like Saw",negative
+"I dislike Paranormal Activity style horror",negative
+"I am not into Twilight romance",negative
+"No Fifty Shades type drama",negative
+"I hate movies with animal death",negative
+"I do not want tragic pet stories",negative
+"Nothing too cruel",negative
+"I dislike manipulative tearjerkers",negative
+"I am not into bleak realism",negative
+"No hopeless endings please",negative
