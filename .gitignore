@@ -19,3 +19,6 @@ Thumbs.db
 
 movielens.db
 docs/
+.worktrees/
+artifacts/*
+!artifacts/README.md
