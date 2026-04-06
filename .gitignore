@@ -18,3 +18,4 @@ ENV/
 Thumbs.db
 
 movielens.db
+docs/
