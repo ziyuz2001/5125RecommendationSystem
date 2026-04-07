@@ -55,7 +55,13 @@ Run commands from the repository root:
 python main.py
 ```
 
-### Run individual stages
+This executes the complete pipeline in sequence.
+
+If the `artifacts/` folder already contains the required trained model checkpoints and generated outputs, you do not need to run the full pipeline again unless you want to regenerate them.
+
+### Run individual stages (optional)
+
+The full pipeline already runs each stage in order. The commands below are only needed if you want to execute a specific stage manually.
 
 ```bash
 python main.py --step classify     # Step 1: Final clause polarity classifier training
@@ -70,6 +76,8 @@ The benchmark step uses one frozen per-user split and evaluates a deterministic 
 ```bash
 streamlit run app.py
 ```
+
+When launching the Streamlit app for the first time, the initial startup may take a while. Please wait until the app has finished building before testing or interacting with it.
 
 ## Evaluation, Error Analysis, and Visualization Outputs
 
