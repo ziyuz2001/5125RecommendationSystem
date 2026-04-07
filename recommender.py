@@ -83,6 +83,11 @@ class SVDRecommender:
             norm[i, mask] = self.user_means[i]
 
         k = min(self.n_factors, min(norm.shape) - 1)
+        if k < 1:
+            self.predicted = norm
+            print(f"SVD fitted  (fallback, users={len(self.user_ids)}, movies={len(self.movie_ids)})")
+            return self
+
         U, sigma, Vt = svds(norm, k=k)
         self.predicted = U @ np.diag(sigma) @ Vt
         print(f"SVD fitted  (factors={k}, users={len(self.user_ids)}, movies={len(self.movie_ids)})")
@@ -224,6 +229,16 @@ def build_content_model(movies: pd.DataFrame):
     return tfidf_matrix, vectorizer, movies
 
 
+def build_content_artifact(movies: pd.DataFrame) -> dict[str, object]:
+    """Return the content model pieces in a dictionary for artifact storage."""
+    tfidf_matrix, vectorizer, movies_indexed = build_content_model(movies)
+    return {
+        'tfidf_matrix': tfidf_matrix,
+        'vectorizer': vectorizer,
+        'movies_indexed': movies_indexed,
+    }
+
+
 def content_similar_movies(movie_id: int, tfidf_matrix,
                             movies_indexed: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     """Return N most genre-similar movies to a given movie."""
@@ -357,6 +372,19 @@ def top_n_for_cluster(cluster_id: int, features_labeled: pd.DataFrame,
                           .reset_index()
                           .merge(movies[['MovieID', 'Title', 'Genres']], on='MovieID'))
     return top[['MovieID', 'Title', 'Genres', 'AvgRating', 'NumRatings']]
+
+
+def build_cluster_summary(features_labeled: pd.DataFrame, ratings: pd.DataFrame) -> pd.DataFrame:
+    """Summarize ratings by cluster and movie."""
+    merged = ratings.merge(
+        features_labeled[['Cluster']],
+        left_on='UserID',
+        right_index=True,
+        how='left',
+    )
+    return (merged.groupby(['Cluster', 'MovieID'], as_index=False)
+                  .agg(AvgRating=('Rating', 'mean'),
+                       NumRatings=('Rating', 'count')))
 
 
 # ---------------------------------------------------------------------------
