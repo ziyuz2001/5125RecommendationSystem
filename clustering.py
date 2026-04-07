@@ -1,7 +1,7 @@
 """
 clustering.py
-K-Means and DBSCAN user clustering based on demographics + rating behaviour.
-Satisfies the Classification/Clustering requirement of the assignment.
+User clustering and fallback artifact generation for the conversational
+movie recommender final project.
 """
 
 import os
@@ -11,11 +11,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
+from artifact_store import save_joblib
 from data_loader import load_ratings, load_users, AGE_MAP, OCCUPATION_MAP, ALL_GENRES
+from recommender import build_cluster_summary
 
 PLOT_DIR = os.path.join(os.path.dirname(__file__), 'plots')
 os.makedirs(PLOT_DIR, exist_ok=True)
@@ -264,6 +266,16 @@ def run_clustering():
     plot_genre_heatmap(features_labeled)
 
     print("\nClustering complete.")
+    return features_labeled, scaler, km
+
+
+def run_clustering_and_save_artifacts():
+    """Run clustering and persist fallback artifacts for the app and CLI."""
+    features_labeled, scaler, km = run_clustering()
+    ratings = load_ratings()
+    cluster_summary = build_cluster_summary(features_labeled, ratings)
+    save_joblib("cluster_summary.joblib", cluster_summary)
+    save_joblib("cluster_model.joblib", {"scaler": scaler, "model": km})
     return features_labeled, scaler, km
 
 

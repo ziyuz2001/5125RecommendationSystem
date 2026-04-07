@@ -16,7 +16,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error
 
-from data_loader import load_ratings, load_movies, ALL_GENRES
+from data_loader import ALL_GENRES
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +83,11 @@ class SVDRecommender:
             norm[i, mask] = self.user_means[i]
 
         k = min(self.n_factors, min(norm.shape) - 1)
+        if k < 1:
+            self.predicted = norm
+            print(f"SVD fitted  (fallback, users={len(self.user_ids)}, movies={len(self.movie_ids)})")
+            return self
+
         U, sigma, Vt = svds(norm, k=k)
         self.predicted = U @ np.diag(sigma) @ Vt
         print(f"SVD fitted  (factors={k}, users={len(self.user_ids)}, movies={len(self.movie_ids)})")
@@ -147,7 +152,7 @@ class KNNRecommender:
 
         self.knn = NearestNeighbors(
             n_neighbors=min(self.k + 1, self.matrix.shape[0]),
-            metric='cosine', algorithm='brute', n_jobs=-1
+            metric='cosine', algorithm='brute', n_jobs=1
         )
         self.knn.fit(self.matrix)
         mode = 'user' if self.user_based else 'item'
@@ -222,6 +227,16 @@ def build_content_model(movies: pd.DataFrame):
     movies = movies.set_index('MovieID')
     print(f"Content model built  (matrix shape: {tfidf_matrix.shape})")
     return tfidf_matrix, vectorizer, movies
+
+
+def build_content_artifact(movies: pd.DataFrame) -> dict[str, object]:
+    """Return the content model pieces in a dictionary for artifact storage."""
+    tfidf_matrix, vectorizer, movies_indexed = build_content_model(movies)
+    return {
+        'tfidf_matrix': tfidf_matrix,
+        'vectorizer': vectorizer,
+        'movies_indexed': movies_indexed,
+    }
 
 
 def content_similar_movies(movie_id: int, tfidf_matrix,
@@ -348,15 +363,31 @@ def top_n_for_cluster(cluster_id: int, features_labeled: pd.DataFrame,
     cluster_users   = features_labeled[features_labeled['Cluster'] == cluster_id].index
     cluster_ratings = ratings[ratings['UserID'].isin(cluster_users)]
 
-    top = (cluster_ratings.groupby('MovieID')
-                          .agg(AvgRating=('Rating', 'mean'),
-                               NumRatings=('Rating', 'count'))
-                          .query('NumRatings >= 10')
-                          .sort_values('AvgRating', ascending=False)
-                          .head(n)
-                          .reset_index()
-                          .merge(movies[['MovieID', 'Title', 'Genres']], on='MovieID'))
+    ranked = (cluster_ratings.groupby('MovieID')
+                             .agg(AvgRating=('Rating', 'mean'),
+                                  NumRatings=('Rating', 'count'))
+                             .sort_values(['AvgRating', 'NumRatings'], ascending=False))
+    filtered = ranked[ranked['NumRatings'] >= 10]
+    if filtered.empty:
+        filtered = ranked
+
+    top = (filtered.head(n)
+                  .reset_index()
+                  .merge(movies[['MovieID', 'Title', 'Genres']], on='MovieID'))
     return top[['MovieID', 'Title', 'Genres', 'AvgRating', 'NumRatings']]
+
+
+def build_cluster_summary(features_labeled: pd.DataFrame, ratings: pd.DataFrame) -> pd.DataFrame:
+    """Summarize ratings by cluster and movie."""
+    merged = ratings.merge(
+        features_labeled[['Cluster']],
+        left_on='UserID',
+        right_index=True,
+        how='left',
+    )
+    return (merged.groupby(['Cluster', 'MovieID'], as_index=False)
+                  .agg(AvgRating=('Rating', 'mean'),
+                       NumRatings=('Rating', 'count')))
 
 
 # ---------------------------------------------------------------------------
@@ -391,25 +422,3 @@ def cross_validate_svd(ratings: pd.DataFrame, n_factors: int = 50,
     return rmse_list, mae_list
 
 
-if __name__ == '__main__':
-    ratings = load_ratings()
-    movies  = load_movies()
-
-    print("Training SVD ...")
-    svd = SVDRecommender(n_factors=50).fit(ratings)
-
-    demo_user = 1
-    rated     = set(ratings[ratings['UserID'] == demo_user]['MovieID'].tolist())
-
-    print(f"\nTop-10 CF (SVD) for user {demo_user}:")
-    print(svd.top_n(demo_user, movies, rated, n=10).to_string(index=False))
-
-    print("\nBuilding content model ...")
-    tfidf_matrix, _, movies_indexed = build_content_model(movies)
-
-    print(f"\nTop-10 Content-Based for user {demo_user}:")
-    print(top_n_content(demo_user, ratings, tfidf_matrix, movies_indexed).to_string(index=False))
-
-    print(f"\nTop-10 Hybrid for user {demo_user}:")
-    print(top_n_hybrid(svd, demo_user, ratings, movies,
-                        tfidf_matrix, movies_indexed).to_string(index=False))

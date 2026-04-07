@@ -19,3 +19,8 @@ Thumbs.db
 
 movielens.db
 docs/
+.worktrees/
+artifacts/*
+!artifacts/README.md
+plots/classifier_confusion_matrix.png
+plots/recommender_comparison.png
