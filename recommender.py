@@ -16,7 +16,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error
 
-from data_loader import load_ratings, load_movies, ALL_GENRES
+from data_loader import ALL_GENRES
 
 
 # ---------------------------------------------------------------------------
@@ -422,25 +422,3 @@ def cross_validate_svd(ratings: pd.DataFrame, n_factors: int = 50,
     return rmse_list, mae_list
 
 
-if __name__ == '__main__':
-    ratings = load_ratings()
-    movies  = load_movies()
-
-    print("Training SVD ...")
-    svd = SVDRecommender(n_factors=50).fit(ratings)
-
-    demo_user = 1
-    rated     = set(ratings[ratings['UserID'] == demo_user]['MovieID'].tolist())
-
-    print(f"\nTop-10 CF (SVD) for user {demo_user}:")
-    print(svd.top_n(demo_user, movies, rated, n=10).to_string(index=False))
-
-    print("\nBuilding content model ...")
-    tfidf_matrix, _, movies_indexed = build_content_model(movies)
-
-    print(f"\nTop-10 Content-Based for user {demo_user}:")
-    print(top_n_content(demo_user, ratings, tfidf_matrix, movies_indexed).to_string(index=False))
-
-    print(f"\nTop-10 Hybrid for user {demo_user}:")
-    print(top_n_hybrid(svd, demo_user, ratings, movies,
-                        tfidf_matrix, movies_indexed).to_string(index=False))

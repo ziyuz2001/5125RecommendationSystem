@@ -80,12 +80,13 @@ def test_app_module_imports():
     import app  # noqa: F401
 
 
-def test_main_accepts_classify_and_benchmark_steps(monkeypatch):
+def test_main_exposes_only_final_workflow_steps(monkeypatch):
     import main as main_module
 
     calls = []
     monkeypatch.setattr(main_module, "step_classify", lambda: calls.append("classify"))
     monkeypatch.setattr(main_module, "step_benchmark", lambda: calls.append("benchmark"))
+    monkeypatch.setattr(main_module, "step_clustering", lambda: calls.append("cluster"))
 
     monkeypatch.setattr("sys.argv", ["main.py", "--step", "classify"])
     main_module.main()
@@ -96,6 +97,28 @@ def test_main_accepts_classify_and_benchmark_steps(monkeypatch):
     main_module.main()
     assert calls == ["benchmark"]
 
+    calls.clear()
+    monkeypatch.setattr("sys.argv", ["main.py", "--step", "cluster"])
+    main_module.main()
+    assert calls == ["cluster"]
+
+    calls.clear()
+    monkeypatch.setattr("sys.argv", ["main.py", "--step", "all"])
+    main_module.main()
+    assert calls == ["classify", "benchmark", "cluster"]
+
+
+def test_main_rejects_legacy_public_steps(monkeypatch):
+    import main as main_module
+
+    monkeypatch.setattr("sys.argv", ["main.py", "--step", "recommend"])
+    try:
+        main_module.main()
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("Expected argparse failure for removed legacy step")
+
 
 def test_readme_mentions_conversational_flow_and_classification():
     text = Path("README.md").read_text(encoding="utf-8")
@@ -103,3 +126,8 @@ def test_readme_mentions_conversational_flow_and_classification():
     assert "conversational" in text.lower()
     assert "classification" in text.lower()
     assert "streamlit run app.py" in text
+    assert "python main.py --step classify" in text
+    assert "python main.py --step benchmark" in text
+    assert "python main.py --step cluster" in text
+    assert "python main.py --step recommend" not in text
+    assert "python main.py --step evaluate" not in text

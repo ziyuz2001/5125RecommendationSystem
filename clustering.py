@@ -1,7 +1,7 @@
 """
 clustering.py
-K-Means and DBSCAN user clustering based on demographics + rating behaviour.
-Satisfies the Classification/Clustering requirement of the assignment.
+User clustering and fallback artifact generation for the conversational
+movie recommender final project.
 """
 
 import os
@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
