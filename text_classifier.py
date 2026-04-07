@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
@@ -13,6 +15,8 @@ from artifact_store import save_csv, save_joblib
 
 
 DATA_PATH = Path(__file__).resolve().parent / "data" / "conversational_polarity.csv"
+BASE_DIR = Path(__file__).resolve().parent
+PLOTS_DIR = BASE_DIR / "plots"
 
 
 def load_clause_dataset() -> pd.DataFrame:
@@ -94,9 +98,57 @@ def fit_and_save_best_classifier() -> dict[str, object]:
     df = load_clause_dataset()
     result = train_classifier_candidates(df)
     best_model_name = result["best_model_name"]
+    result["heldout_models"] = dict(result["models"])
     best_model = build_candidates()[best_model_name]
     best_model.fit(df["text"], df["label"])
     result["models"][best_model_name] = best_model
     save_joblib("classifier_model.joblib", best_model)
     save_csv("classifier_metrics.csv", result["metrics"])
+    return result
+
+
+def save_confusion_plot(y_true, y_pred) -> Path:
+    labels = ["positive", "negative"]
+    matrix = confusion_matrix(y_true, y_pred, labels=labels)
+    PLOTS_DIR.mkdir(exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        cbar=False,
+        xticklabels=labels,
+        yticklabels=labels,
+        ax=ax,
+    )
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
+    ax.set_title("Classifier Confusion Matrix")
+    fig.tight_layout()
+
+    plot_path = PLOTS_DIR / "classifier_confusion_matrix.png"
+    fig.savefig(plot_path, dpi=150)
+    plt.close(fig)
+    return plot_path
+
+
+def run_classification_pipeline() -> dict[str, object]:
+    result = fit_and_save_best_classifier()
+    best_name = result["best_model_name"]
+    heldout_model = result["heldout_models"][best_name]
+    preds = heldout_model.predict(result["x_test"])
+    x_test = result["x_test"].reset_index(drop=True)
+    y_test = result["y_test"].reset_index(drop=True)
+    errors = pd.DataFrame(
+        {
+            "text": x_test,
+            "actual": y_test,
+            "predicted": preds,
+        }
+    )
+    errors = errors.loc[errors["actual"] != errors["predicted"]].reset_index(drop=True)
+    save_csv("classifier_errors.csv", errors)
+    save_confusion_plot(y_test, preds)
     return result

@@ -3,10 +3,12 @@ from pathlib import Path
 import pandas as pd
 from sklearn.base import BaseEstimator
 
+import artifact_store
 from text_classifier import (
     build_candidates,
     fit_and_save_best_classifier,
     load_clause_dataset,
+    run_classification_pipeline,
     train_classifier_candidates,
 )
 
@@ -65,6 +67,19 @@ class _RecordingEstimator(BaseEstimator):
         return ["positive"] * len(x)
 
 
+class _FixedPredictor(BaseEstimator):
+    def __init__(self, prediction):
+        self.prediction = prediction
+        self.fit_size = None
+
+    def fit(self, x, y):
+        self.fit_size = len(x)
+        return self
+
+    def predict(self, x):
+        return [self.prediction] * len(x)
+
+
 def test_fit_and_save_best_classifier_refits_best_model_on_full_dataset(monkeypatch):
     df = pd.DataFrame(
         {
@@ -112,3 +127,67 @@ def test_fit_and_save_best_classifier_refits_best_model_on_full_dataset(monkeypa
     assert saved["obj"].fit_size == len(df)
     assert result["models"]["linear_svm"] is saved["obj"]
     assert result["models"]["linear_svm"].fit_size == len(df)
+
+
+def test_classification_pipeline_writes_metrics_and_errors(monkeypatch, tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    plot_root = tmp_path / "plots"
+    monkeypatch.setattr(artifact_store, "ARTIFACT_DIR", artifact_root)
+    monkeypatch.setattr("text_classifier.PLOTS_DIR", plot_root)
+    artifact_root.mkdir(exist_ok=True)
+    plot_root.mkdir(exist_ok=True)
+
+    df = pd.DataFrame(
+        {
+            "text": ["alpha", "beta", "gamma", "delta"],
+            "label": ["positive", "positive", "positive", "positive"],
+        }
+    )
+    held_out_model = _FixedPredictor("negative")
+    refit_model = _FixedPredictor("positive")
+
+    monkeypatch.setattr("text_classifier.load_clause_dataset", lambda: df)
+    monkeypatch.setattr(
+        "text_classifier.train_classifier_candidates",
+        lambda frame, test_size=0.2, random_state=42: {
+            "models": {"linear_svm": held_out_model},
+            "heldout_models": {"linear_svm": held_out_model},
+            "metrics": pd.DataFrame(
+                [
+                    {
+                        "model_name": "linear_svm",
+                        "accuracy": 1.0,
+                        "precision": 1.0,
+                        "recall": 1.0,
+                        "macro_f1": 1.0,
+                    }
+                ]
+            ),
+            "best_model_name": "linear_svm",
+            "x_test": frame["text"].iloc[:2],
+            "y_test": frame["label"].iloc[:2],
+        },
+    )
+    monkeypatch.setattr(
+        "text_classifier.build_candidates",
+        lambda: {"linear_svm": refit_model},
+    )
+
+    result = run_classification_pipeline()
+
+    metrics_path = artifact_root / "classifier_metrics.csv"
+    errors_path = artifact_root / "classifier_errors.csv"
+    plot_path = plot_root / "classifier_confusion_matrix.png"
+
+    assert metrics_path.exists()
+    assert errors_path.exists()
+    assert plot_path.exists()
+
+    errors = pd.read_csv(errors_path)
+    assert list(errors.columns) == ["text", "actual", "predicted"]
+
+    heldout_predictions = result["heldout_models"]["linear_svm"].predict(result["x_test"])
+    expected_mismatches = sum(
+        pred != actual for pred, actual in zip(heldout_predictions, result["y_test"])
+    )
+    assert len(errors) == expected_mismatches
