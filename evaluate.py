@@ -1,238 +1,352 @@
 """
 evaluate.py
-Model evaluation (no scikit-surprise):
-  - 5-fold cross-validation (RMSE / MAE) for SVDRecommender
-  - Precision@K and Recall@K for top-N recommendations
-  - Silhouette score summary for clustering
+Shared frozen holdout evaluation for the recommender benchmark.
 """
 
-import os
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Iterable
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import KFold
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics.pairwise import cosine_similarity
 
-from data_loader import load_ratings, load_movies
-from recommender import SVDRecommender, build_content_model, top_n_content
-
-PLOT_DIR = os.path.join(os.path.dirname(__file__), 'plots')
-os.makedirs(PLOT_DIR, exist_ok=True)
-
-sns.set_theme(style='whitegrid')
+from artifact_store import save_csv, save_joblib, save_json
+from data_loader import load_movies, load_ratings
+from recommender import KNNRecommender, SVDRecommender, build_content_artifact
 
 
-# ---------------------------------------------------------------------------
-# 1. Cross-Validation: RMSE and MAE
-# ---------------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+PLOTS_DIR = BASE_DIR / "plots"
+PLOTS_DIR.mkdir(exist_ok=True)
 
-def evaluate_cf_models(ratings: pd.DataFrame, n_splits: int = 5) -> pd.DataFrame:
+sns.set_theme(style="whitegrid")
+
+
+def build_holdout_split(
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    5-fold CV for SVD with different numbers of latent factors.
-    Returns a DataFrame with mean RMSE and MAE.
+    Build a deterministic per-user train/test split.
+
+    Each user with at least two ratings contributes at least one test row and
+    at least one train row. Single-rating users stay entirely in train.
     """
-    factor_configs = [20, 50, 100]
-    results = []
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    indices = np.arange(len(ratings))
+    ratings = load_ratings().copy()
+    train_parts: list[pd.DataFrame] = []
+    test_parts: list[pd.DataFrame] = []
 
-    for n_factors in factor_configs:
-        name = f'SVD (k={n_factors})'
-        print(f"  Cross-validating {name} ...")
-        rmse_list, mae_list = [], []
+    sort_cols = [col for col in ["Timestamp", "MovieID"] if col in ratings.columns]
 
-        for fold, (train_idx, test_idx) in enumerate(kf.split(indices), 1):
-            train_df = ratings.iloc[train_idx].reset_index(drop=True)
-            test_df  = ratings.iloc[test_idx].reset_index(drop=True)
+    for user_id, group in ratings.groupby("UserID", sort=True):
+        group = group.sort_values(sort_cols).reset_index(drop=True) if sort_cols else group.reset_index(drop=True)
+        if len(group) < 2:
+            train_parts.append(group)
+            continue
 
-            model = SVDRecommender(n_factors=n_factors)
-            model.fit(train_df)
+        n_test = max(1, int(round(len(group) * test_size)))
+        n_test = min(n_test, len(group) - 1)
+        test_rows = group.sample(n=n_test, random_state=random_state + int(user_id)).index
+        test_group = group.loc[test_rows]
+        train_group = group.drop(test_rows)
 
-            preds, trues = [], []
-            for _, row in test_df.iterrows():
-                preds.append(model.predict(int(row['UserID']), int(row['MovieID'])))
-                trues.append(row['Rating'])
+        train_parts.append(train_group)
+        test_parts.append(test_group)
 
-            rmse = np.sqrt(mean_squared_error(trues, preds))
-            mae  = np.mean(np.abs(np.array(trues) - np.array(preds)))
-            rmse_list.append(rmse)
-            mae_list.append(mae)
-            print(f"    Fold {fold}  RMSE={rmse:.4f}  MAE={mae:.4f}")
+    train_df = pd.concat(train_parts, ignore_index=True)
+    test_df = pd.concat(test_parts, ignore_index=True) if test_parts else ratings.iloc[0:0].copy()
 
-        results.append({
-            'Model':     name,
-            'RMSE_mean': np.mean(rmse_list),
-            'RMSE_std':  np.std(rmse_list),
-            'MAE_mean':  np.mean(mae_list),
-            'MAE_std':   np.std(mae_list),
-        })
-
-    df = pd.DataFrame(results).sort_values('RMSE_mean')
-    print("\nCV Results:")
-    print(df[['Model', 'RMSE_mean', 'RMSE_std', 'MAE_mean', 'MAE_std']].to_string(index=False))
-    return df
+    sort_train = [col for col in ["UserID", "MovieID", "Timestamp"] if col in train_df.columns]
+    sort_test = [col for col in ["UserID", "MovieID", "Timestamp"] if col in test_df.columns]
+    train_df = train_df.sort_values(sort_train).reset_index(drop=True) if sort_train else train_df.reset_index(drop=True)
+    test_df = test_df.sort_values(sort_test).reset_index(drop=True) if sort_test else test_df.reset_index(drop=True)
+    return train_df, test_df
 
 
-def plot_cv_results(cv_df: pd.DataFrame):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+def save_split_artifact(train_df: pd.DataFrame, test_df: pd.DataFrame) -> Path:
+    """Persist the frozen split so later tasks can reuse the exact benchmark data."""
 
-    for ax, metric, std_col, color in [
-        (axes[0], 'RMSE_mean', 'RMSE_std', 'steelblue'),
-        (axes[1], 'MAE_mean',  'MAE_std',  'salmon')
-    ]:
-        bars = ax.barh(cv_df['Model'], cv_df[metric],
-                       xerr=cv_df[std_col], color=color, edgecolor='white', capsize=4)
-        ax.set_xlabel(metric.replace('_mean', ''), fontsize=12)
-        ax.set_title(f'Model Comparison – {metric.replace("_mean", "")}', fontsize=13)
-        for bar in bars:
-            ax.text(bar.get_width() + 0.002,
-                    bar.get_y() + bar.get_height() / 2,
-                    f'{bar.get_width():.4f}', va='center', fontsize=9)
+    payload = {
+        "train": train_df.reset_index(drop=True),
+        "test": test_df.reset_index(drop=True),
+    }
+    return save_joblib("eval_split.joblib", payload)
 
-    fig.suptitle('5-Fold Cross-Validation Results', fontsize=14)
+
+def choose_recommender_winners(rows: list[dict]) -> dict[str, str]:
+    """Select overall and app-facing recommender winners from benchmark rows."""
+
+    if not rows:
+        payload = {"overall_winner": "", "app_winner": ""}
+        save_json("recommender_selection.json", payload)
+        return payload
+
+    ranked = sorted(rows, key=lambda row: float(row["f1_at_k"]), reverse=True)
+    overall_winner = str(ranked[0]["model_name"])
+    text_compatible_rows = [
+        row for row in ranked if bool(row.get("text_compatible")) and row["model_name"] in {"content", "hybrid"}
+    ]
+    app_winner = str(text_compatible_rows[0]["model_name"]) if text_compatible_rows else ""
+
+    payload = {
+        "overall_winner": overall_winner,
+        "app_winner": app_winner,
+    }
+    save_json("recommender_selection.json", payload)
+    return payload
+
+
+def compute_recommendation_metrics(
+    scored_df: pd.DataFrame,
+    k: int = 10,
+    threshold: float = 3.5,
+) -> dict[str, float]:
+    """
+    Compute macro-averaged Precision@K, Recall@K, and F1@K over users.
+
+    The input frame must contain:
+    - UserID
+    - actual_rating
+    - predicted_score
+    """
+
+    precision_scores: list[float] = []
+    recall_scores: list[float] = []
+    f1_scores: list[float] = []
+
+    for _, user_df in scored_df.groupby("UserID", sort=True):
+        relevant_mask = user_df["actual_rating"] >= threshold
+        relevant_count = int(relevant_mask.sum())
+        if relevant_count == 0:
+            continue
+
+        ranked = user_df.sort_values("predicted_score", ascending=False).head(k)
+        hits = int((ranked["actual_rating"] >= threshold).sum())
+        denom = min(k, len(user_df))
+        precision = hits / denom if denom else 0.0
+        recall = hits / relevant_count if relevant_count else 0.0
+        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+
+        precision_scores.append(precision)
+        recall_scores.append(recall)
+        f1_scores.append(f1)
+
+    return {
+        "precision_at_k": float(np.mean(precision_scores)) if precision_scores else 0.0,
+        "recall_at_k": float(np.mean(recall_scores)) if recall_scores else 0.0,
+        "f1_at_k": float(np.mean(f1_scores)) if f1_scores else 0.0,
+        "users_evaluated": float(len(precision_scores)),
+    }
+
+
+def _build_user_content_profile(
+    user_train: pd.DataFrame,
+    content_artifact: dict[str, object],
+) -> np.ndarray | None:
+    tfidf_matrix = content_artifact["tfidf_matrix"]
+    movies_indexed: pd.DataFrame = content_artifact["movies_indexed"]
+
+    valid = user_train[user_train["MovieID"].isin(movies_indexed.index)]
+    if valid.empty:
+        return None
+
+    movie_ids = valid["MovieID"].tolist()
+    weights = valid["Rating"].astype(float).to_numpy()
+    weight_sum = weights.sum()
+    if weight_sum <= 0:
+        return None
+
+    weights = weights / weight_sum
+    indices = [movies_indexed.index.get_loc(movie_id) for movie_id in movie_ids]
+    profile = np.average(tfidf_matrix[indices].toarray(), axis=0, weights=weights)
+    return profile
+
+
+def _score_content_candidates(
+    user_train: pd.DataFrame,
+    candidate_movie_ids: Iterable[int],
+    content_artifact: dict[str, object],
+) -> dict[int, float]:
+    tfidf_matrix = content_artifact["tfidf_matrix"]
+    movies_indexed: pd.DataFrame = content_artifact["movies_indexed"]
+
+    profile = _build_user_content_profile(user_train, content_artifact)
+    if profile is None:
+        return {int(movie_id): 1.0 for movie_id in candidate_movie_ids}
+
+    candidate_movie_ids = [int(movie_id) for movie_id in candidate_movie_ids if int(movie_id) in movies_indexed.index]
+    if not candidate_movie_ids:
+        return {}
+
+    candidate_indices = [movies_indexed.index.get_loc(movie_id) for movie_id in candidate_movie_ids]
+    similarities = cosine_similarity(profile.reshape(1, -1), tfidf_matrix[candidate_indices].toarray()).flatten()
+    return {
+        movie_id: float(np.clip(1.0 + 4.0 * similarity, 1.0, 5.0))
+        for movie_id, similarity in zip(candidate_movie_ids, similarities)
+    }
+
+
+def _score_holdout_items(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    model_name: str,
+    model_bundle: dict[str, object],
+) -> pd.DataFrame:
+    movies = load_movies()
+    movie_lookup = movies.set_index("MovieID")
+    rows: list[dict[str, object]] = []
+
+    for user_id, user_test in test_df.groupby("UserID", sort=True):
+        user_train = train_df[train_df["UserID"] == user_id]
+        candidate_movie_ids = user_test["MovieID"].tolist()
+
+        content_scores: dict[int, float] = {}
+        if model_name in {"content", "hybrid"}:
+            content_scores = _score_content_candidates(
+                user_train=user_train,
+                candidate_movie_ids=candidate_movie_ids,
+                content_artifact=model_bundle["content_artifact"],
+            )
+
+        for row in user_test.itertuples(index=False):
+            movie_id = int(row.MovieID)
+            actual_rating = float(row.Rating)
+
+            if model_name == "svd":
+                predicted_score = float(model_bundle["svd_model"].predict(int(user_id), movie_id))
+            elif model_name == "knn":
+                predicted_score = float(model_bundle["knn_model"].predict(int(user_id), movie_id))
+            elif model_name == "content":
+                predicted_score = float(content_scores.get(movie_id, 1.0))
+            elif model_name == "hybrid":
+                svd_score = float(model_bundle["svd_model"].predict(int(user_id), movie_id))
+                content_score = float(content_scores.get(movie_id, 1.0))
+                predicted_score = float(np.clip(0.7 * svd_score + 0.3 * content_score, 1.0, 5.0))
+            else:
+                raise ValueError(f"Unknown model_name: {model_name}")
+
+            movie_meta = movie_lookup.loc[movie_id] if movie_id in movie_lookup.index else None
+            rows.append(
+                {
+                    "model_name": model_name,
+                    "UserID": int(user_id),
+                    "MovieID": movie_id,
+                    "Title": movie_meta["Title"] if movie_meta is not None else "",
+                    "Genres": movie_meta["Genres"] if movie_meta is not None else "",
+                    "actual_rating": actual_rating,
+                    "predicted_score": predicted_score,
+                    "abs_error": abs(actual_rating - predicted_score),
+                    "relevant": actual_rating >= 3.5,
+                }
+            )
+
+    return pd.DataFrame(rows)
+
+
+def _plot_recommender_comparison(metrics_df: pd.DataFrame) -> Path:
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    plot_df = metrics_df.sort_values("f1_at_k", ascending=False).reset_index(drop=True)
+    sns.barplot(data=plot_df, x="model_name", y="f1_at_k", ax=ax, palette="deep")
+    ax.set_xlabel("Model")
+    ax.set_ylabel("F1@K")
+    ax.set_title("Recommender Comparison on Shared Holdout Split")
+    ax.set_ylim(0, max(0.05, float(plot_df["f1_at_k"].max()) * 1.15))
+    for idx, value in enumerate(plot_df["f1_at_k"]):
+        ax.text(idx, value + 0.01, f"{value:.3f}", ha="center", va="bottom", fontsize=9)
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, '10_cv_rmse_mae.png')
-    fig.savefig(path, bbox_inches='tight', dpi=150)
+    path = PLOTS_DIR / "recommender_comparison.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved → {path}")
+    return path
 
 
-# ---------------------------------------------------------------------------
-# 2. Precision@K and Recall@K
-# ---------------------------------------------------------------------------
+def _build_error_report(scored_frames: list[pd.DataFrame], top_n: int = 25) -> pd.DataFrame:
+    if not scored_frames:
+        return pd.DataFrame(
+            columns=[
+                "model_name",
+                "UserID",
+                "MovieID",
+                "Title",
+                "Genres",
+                "actual_rating",
+                "predicted_score",
+                "abs_error",
+                "relevant",
+            ]
+        )
 
-def evaluate_precision_recall(ratings: pd.DataFrame,
-                               k_values=(5, 10, 20),
-                               threshold: float = 3.5,
-                               sample_users: int = 500) -> pd.DataFrame:
+    scored = pd.concat(scored_frames, ignore_index=True)
+    error_rows: list[pd.DataFrame] = []
+    for model_name, group in scored.groupby("model_name", sort=True):
+        error_rows.append(group.sort_values("abs_error", ascending=False).head(top_n))
+    return pd.concat(error_rows, ignore_index=True)
+
+
+def run_evaluation(
+    k: int = 10,
+    threshold: float = 3.5,
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> dict[str, object]:
     """
-    Train SVD on 80% of each sampled user's ratings, test on 20%.
-    Compute Precision@K, Recall@K, F1@K.
+    Run the frozen-split recommender benchmark and persist artifacts.
     """
-    # Use a sample of users for speed
-    rng = np.random.default_rng(42)
-    user_ids = rng.choice(ratings['UserID'].unique(),
-                          size=min(sample_users, ratings['UserID'].nunique()),
-                          replace=False)
 
-    train_rows, test_rows = [], []
-    for uid in user_ids:
-        u_df = ratings[ratings['UserID'] == uid]
-        split = max(1, int(len(u_df) * 0.8))
-        u_shuffled = u_df.sample(frac=1, random_state=42)
-        train_rows.append(u_shuffled.iloc[:split])
-        test_rows.append(u_shuffled.iloc[split:])
+    train_df, test_df = build_holdout_split(test_size=test_size, random_state=random_state)
+    save_split_artifact(train_df, test_df)
 
-    train_df = pd.concat(train_rows).reset_index(drop=True)
-    test_df  = pd.concat(test_rows).reset_index(drop=True)
+    movies = load_movies()
+    content_artifact = build_content_artifact(movies)
+    svd_model = SVDRecommender(n_factors=50).fit(train_df)
+    knn_model = KNNRecommender(k=40, user_based=False).fit(train_df)
 
-    model = SVDRecommender(n_factors=50)
-    model.fit(train_df)
+    model_bundle = {
+        "svd_model": svd_model,
+        "knn_model": knn_model,
+        "content_artifact": content_artifact,
+    }
 
-    # Build predictions dict: uid -> list of (pred, true)
-    user_preds = {}
-    for _, row in test_df.iterrows():
-        uid = int(row['UserID'])
-        mid = int(row['MovieID'])
-        pred = model.predict(uid, mid)
-        user_preds.setdefault(uid, []).append((pred, row['Rating']))
+    scored_frames: list[pd.DataFrame] = []
+    metrics_rows: list[dict[str, object]] = []
+    for model_name in ["svd", "knn", "content", "hybrid"]:
+        scored_df = _score_holdout_items(train_df, test_df, model_name, model_bundle)
+        scored_frames.append(scored_df)
 
-    rows = []
-    for k in k_values:
-        precisions, recalls = [], []
-        for uid, preds in user_preds.items():
-            top_k      = sorted(preds, key=lambda x: x[0], reverse=True)[:k]
-            n_hit      = sum(1 for _, true_r in top_k if true_r >= threshold)
-            n_relevant = sum(1 for _, true_r in preds if true_r >= threshold)
-            precisions.append(n_hit / k)
-            recalls.append(n_hit / n_relevant if n_relevant > 0 else 0)
+        metrics = compute_recommendation_metrics(scored_df, k=k, threshold=threshold)
+        metrics_rows.append(
+            {
+                "model_name": model_name,
+                "text_compatible": model_name in {"content", "hybrid"},
+                "k": k,
+                "precision_at_k": metrics["precision_at_k"],
+                "recall_at_k": metrics["recall_at_k"],
+                "f1_at_k": metrics["f1_at_k"],
+                "users_evaluated": metrics["users_evaluated"],
+            }
+        )
 
-        p, r = np.mean(precisions), np.mean(recalls)
-        f1   = 2 * p * r / (p + r) if (p + r) > 0 else 0
-        rows.append({'K': k, 'Precision@K': p, 'Recall@K': r, 'F1@K': f1})
+    metrics_df = pd.DataFrame(metrics_rows).sort_values("f1_at_k", ascending=False).reset_index(drop=True)
+    save_csv("recommender_metrics.csv", metrics_df)
+    _plot_recommender_comparison(metrics_df)
+    winners = choose_recommender_winners(metrics_rows)
 
-    df = pd.DataFrame(rows)
-    print("\nPrecision / Recall @ K  (SVD k=50, threshold=3.5):")
-    print(df.to_string(index=False))
-    return df
+    errors_df = _build_error_report(scored_frames)
+    save_csv("recommender_errors.csv", errors_df)
 
-
-def plot_precision_recall(pr_df: pd.DataFrame):
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4))
-    for ax, col, color in [
-        (axes[0], 'Precision@K', 'steelblue'),
-        (axes[1], 'Recall@K',    'salmon'),
-        (axes[2], 'F1@K',        'seagreen')
-    ]:
-        ax.bar(pr_df['K'].astype(str), pr_df[col], color=color, edgecolor='white')
-        ax.set_xlabel('K')
-        ax.set_ylabel(col)
-        ax.set_title(col)
-        for i, v in enumerate(pr_df[col]):
-            ax.text(i, v + 0.002, f'{v:.4f}', ha='center', fontsize=9)
-
-    fig.suptitle('Top-N Evaluation (SVD k=50, threshold ≥ 3.5)', fontsize=13)
-    fig.tight_layout()
-    path = os.path.join(PLOT_DIR, '11_precision_recall.png')
-    fig.savefig(path, bbox_inches='tight', dpi=150)
-    plt.close(fig)
-    print(f"  saved → {path}")
+    return {
+        "train_df": train_df,
+        "test_df": test_df,
+        "metrics": metrics_df,
+        "errors": errors_df,
+        "winners": winners,
+    }
 
 
-# ---------------------------------------------------------------------------
-# 3. Clustering evaluation
-# ---------------------------------------------------------------------------
-
-def evaluate_clustering(features: pd.DataFrame) -> pd.DataFrame:
-    """Silhouette scores for K = 2..8."""
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.cluster import KMeans
-    from sklearn.metrics import silhouette_score
-
-    feat_cols = [c for c in features.columns if c != 'Cluster']
-    X = StandardScaler().fit_transform(features[feat_cols].values)
-
-    rows = []
-    for k in range(2, 9):
-        km     = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = km.fit_predict(X)
-        sil    = silhouette_score(X, labels, sample_size=2000, random_state=42)
-        rows.append({'K': k, 'Inertia': km.inertia_, 'Silhouette': sil})
-
-    df = pd.DataFrame(rows)
-    print("\nClustering Evaluation:")
-    print(df.to_string(index=False))
-    return df
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def run_evaluation():
-    print("Loading data...")
-    ratings = load_ratings()
-
-    print("\n[1/3] Cross-Validating SVD models (5-fold) ...")
-    cv_df = evaluate_cf_models(ratings, n_splits=5)
-    plot_cv_results(cv_df)
-
-    print("\n[2/3] Precision / Recall @ K ...")
-    pr_df = evaluate_precision_recall(ratings)
-    plot_precision_recall(pr_df)
-
-    print("\n[3/3] Clustering evaluation ...")
-    from clustering import build_user_features
-    from data_loader import load_users
-    users    = load_users()
-    features = build_user_features(ratings, users)
-    clust_df = evaluate_clustering(features)
-
-    print("\nEvaluation complete. Plots saved to ./plots/")
-    return cv_df, pr_df, clust_df
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_evaluation()
