@@ -134,6 +134,26 @@ def save_confusion_plot(y_true, y_pred) -> Path:
     return plot_path
 
 
+def save_model_comparison_plot(metrics_df: pd.DataFrame) -> Path:
+    plot_df = metrics_df.copy()
+    plot_df["macro_f1"] = plot_df["macro_f1"].astype(float)
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    sns.barplot(data=plot_df, x="model_name", y="macro_f1", color="steelblue", ax=ax)
+    ax.set_xlabel("Classifier")
+    ax.set_ylabel("Macro F1")
+    ax.set_title("Classifier Comparison")
+    ax.set_ylim(0, max(0.2, float(plot_df["macro_f1"].max()) * 1.1))
+    for idx, value in enumerate(plot_df["macro_f1"]):
+        ax.text(idx, value + 0.01, f"{value:.3f}", ha="center", va="bottom", fontsize=9)
+    fig.tight_layout()
+
+    plot_path = PLOTS_DIR / "classifier_model_comparison.png"
+    fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return plot_path
+
+
 def run_classification_pipeline() -> dict[str, object]:
     result = fit_and_save_best_classifier()
     best_name = result["best_model_name"]
@@ -151,4 +171,5 @@ def run_classification_pipeline() -> dict[str, object]:
     errors = errors.loc[errors["actual"] != errors["predicted"]].reset_index(drop=True)
     save_csv("classifier_errors.csv", errors)
     save_confusion_plot(y_test, preds)
+    save_model_comparison_plot(result["metrics"])
     return result

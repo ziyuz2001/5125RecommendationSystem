@@ -70,3 +70,33 @@ The benchmark step uses one frozen per-user split and evaluates a deterministic 
 ```bash
 streamlit run app.py
 ```
+
+## Evaluation, Error Analysis, and Visualization Outputs
+
+The offline pipeline now saves explicit grader-facing outputs for the three ML-heavy rubric areas:
+
+- `artifacts/classifier_metrics.csv`
+  Comparison table for the three clause classifiers.
+- `artifacts/recommender_metrics.csv`
+  Main recommender comparison at the selected benchmark cutoff.
+- `artifacts/recommender_metrics_by_k.csv`
+  Recommender precision, recall, and F1 across multiple `K` values.
+- `artifacts/clustering_metrics.csv`
+  Inertia and silhouette values across the tested clustering choices.
+- `artifacts/cluster_sizes.csv`
+  Cluster size table used to interpret fallback balance.
+- `artifacts/results_summary.md`
+  Short narrative summary of the latest saved classifier, recommender, and clustering results.
+- `artifacts/error_analysis.md`
+  Short narrative summary of observed classifier, recommender, and clustering failure patterns.
+
+The pipeline also saves visual outputs in `plots/`:
+
+- `classifier_confusion_matrix.png`
+- `classifier_model_comparison.png`
+- `recommender_comparison.png`
+- `recommender_metrics_by_k.png`
+- `optimal_k.png`
+- `cluster_pca.png`
+- `genre_heatmap.png`
+- `cluster_sizes.png`

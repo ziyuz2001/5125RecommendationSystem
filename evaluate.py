@@ -251,7 +251,7 @@ def _score_holdout_items(
 def _plot_recommender_comparison(metrics_df: pd.DataFrame) -> Path:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     plot_df = metrics_df.sort_values("f1_at_k", ascending=False).reset_index(drop=True)
-    sns.barplot(data=plot_df, x="model_name", y="f1_at_k", ax=ax, palette="deep")
+    sns.barplot(data=plot_df, x="model_name", y="f1_at_k", ax=ax, color="steelblue")
     ax.set_xlabel("Model")
     ax.set_ylabel("F1@K")
     ax.set_title("Recommender Comparison on Shared Holdout Split")
@@ -260,6 +260,76 @@ def _plot_recommender_comparison(metrics_df: pd.DataFrame) -> Path:
         ax.text(idx, value + 0.01, f"{value:.3f}", ha="center", va="bottom", fontsize=9)
     fig.tight_layout()
     path = PLOTS_DIR / "recommender_comparison.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def _build_metrics_by_k(
+    scored_frames: list[pd.DataFrame],
+    ks: tuple[int, ...] = (5, 10, 15, 20),
+    threshold: float = 3.5,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for scored_df in scored_frames:
+        if scored_df.empty:
+            continue
+
+        model_name = str(scored_df["model_name"].iloc[0])
+        text_compatible = model_name in {"content", "hybrid"}
+        for k in ks:
+            metrics = compute_recommendation_metrics(scored_df, k=k, threshold=threshold)
+            rows.append(
+                {
+                    "model_name": model_name,
+                    "text_compatible": text_compatible,
+                    "k": k,
+                    "precision_at_k": metrics["precision_at_k"],
+                    "recall_at_k": metrics["recall_at_k"],
+                    "f1_at_k": metrics["f1_at_k"],
+                    "users_evaluated": metrics["users_evaluated"],
+                }
+            )
+
+    return pd.DataFrame(rows).sort_values(["k", "f1_at_k"], ascending=[True, False]).reset_index(drop=True)
+
+
+def _plot_recommender_metrics_by_k(metrics_by_k_df: pd.DataFrame) -> Path:
+    plot_df = metrics_by_k_df.melt(
+        id_vars=["model_name", "k"],
+        value_vars=["precision_at_k", "recall_at_k", "f1_at_k"],
+        var_name="metric",
+        value_name="score",
+    )
+
+    metric_labels = {
+        "precision_at_k": "Precision@K",
+        "recall_at_k": "Recall@K",
+        "f1_at_k": "F1@K",
+    }
+    plot_df["metric"] = plot_df["metric"].map(metric_labels)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharex=True, sharey=True)
+    for ax, metric_name in zip(axes, ["Precision@K", "Recall@K", "F1@K"]):
+        subset = plot_df[plot_df["metric"] == metric_name]
+        sns.lineplot(
+            data=subset,
+            x="k",
+            y="score",
+            hue="model_name",
+            marker="o",
+            linewidth=2,
+            ax=ax,
+        )
+        ax.set_title(metric_name)
+        ax.set_xlabel("K")
+        ax.set_ylabel("Score")
+        ax.set_ylim(0, max(0.05, float(plot_df["score"].max()) * 1.1))
+        ax.legend(title="Model")
+
+    fig.suptitle("Recommender Metrics Across K Values", fontsize=13)
+    fig.tight_layout()
+    path = PLOTS_DIR / "recommender_metrics_by_k.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return path
@@ -353,6 +423,9 @@ def run_evaluation(
     metrics_df = pd.DataFrame(metrics_rows).sort_values("f1_at_k", ascending=False).reset_index(drop=True)
     save_csv("recommender_metrics.csv", metrics_df)
     _plot_recommender_comparison(metrics_df)
+    metrics_by_k_df = _build_metrics_by_k(scored_frames, threshold=threshold)
+    save_csv("recommender_metrics_by_k.csv", metrics_by_k_df)
+    _plot_recommender_metrics_by_k(metrics_by_k_df)
     winners = choose_recommender_winners(metrics_rows)
 
     errors_df = _build_error_report(scored_frames)
@@ -363,6 +436,7 @@ def run_evaluation(
         "test_df": test_df,
         "benchmark_test_df": benchmark_test_df,
         "metrics": metrics_df,
+        "metrics_by_k": metrics_by_k_df,
         "errors": errors_df,
         "winners": winners,
     }

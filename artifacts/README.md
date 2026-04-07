@@ -16,9 +16,14 @@ workflow. These files are generated locally and are not tracked in git.
 - `classifier_model.joblib`
 - `classifier_metrics.csv`
 - `classifier_errors.csv`
+- `results_summary.md`
+- `error_analysis.md`
 - `recommender_metrics.csv`
+- `recommender_metrics_by_k.csv`
 - `recommender_errors.csv`
 - `recommender_selection.json`
 - `eval_split.joblib`
+- `clustering_metrics.csv`
+- `cluster_sizes.csv`
 - `cluster_summary.joblib`
 - `cluster_model.joblib`

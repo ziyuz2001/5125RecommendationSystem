@@ -13,6 +13,7 @@ import argparse
 
 from clustering import run_clustering_and_save_artifacts
 from evaluate import run_evaluation
+from reporting import refresh_reports
 from text_classifier import run_classification_pipeline
 
 
@@ -25,16 +26,20 @@ def section(title: str):
 def step_classify():
     section("STEP 1 - Train Clause Polarity Classifier")
     run_classification_pipeline()
+    refresh_reports()
 
 
 def step_benchmark():
     section("STEP 2 - Benchmark Recommenders and Save Artifacts")
     run_evaluation()
+    refresh_reports()
 
 
 def step_clustering():
     section("STEP 3 - Generate Clustering Fallback Artifacts")
-    return run_clustering_and_save_artifacts()
+    result = run_clustering_and_save_artifacts()
+    refresh_reports()
+    return result
 
 
 def step_all():

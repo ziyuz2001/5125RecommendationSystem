@@ -5,29 +5,26 @@ movie recommender final project.
 """
 
 import os
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-
-from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
 
-from artifact_store import save_joblib
-from data_loader import load_ratings, load_users, AGE_MAP, OCCUPATION_MAP, ALL_GENRES
+from artifact_store import save_csv, save_joblib
+from data_loader import AGE_MAP, ALL_GENRES, OCCUPATION_MAP, load_ratings, load_users
 from recommender import build_cluster_summary
 
-PLOT_DIR = os.path.join(os.path.dirname(__file__), 'plots')
+
+PLOT_DIR = os.path.join(os.path.dirname(__file__), "plots")
 os.makedirs(PLOT_DIR, exist_ok=True)
 
-sns.set_theme(style='whitegrid')
+sns.set_theme(style="whitegrid")
 
-
-# ---------------------------------------------------------------------------
-# Feature engineering
-# ---------------------------------------------------------------------------
 
 def build_user_features(ratings: pd.DataFrame, users: pd.DataFrame) -> pd.DataFrame:
     """
@@ -37,49 +34,33 @@ def build_user_features(ratings: pd.DataFrame, users: pd.DataFrame) -> pd.DataFr
       - Genre profile : fraction of ratings in each of the 18 genres
     """
     from data_loader import load_movies
+
     movies = load_movies()
 
-    # --- rating statistics per user ---
-    rating_stats = (ratings.groupby('UserID')['Rating']
-                            .agg(mean_rating='mean',
-                                 num_ratings='count',
-                                 std_rating='std')
-                            .fillna(0)
-                            .reset_index())
+    rating_stats = (
+        ratings.groupby("UserID")["Rating"]
+        .agg(mean_rating="mean", num_ratings="count", std_rating="std")
+        .fillna(0)
+        .reset_index()
+    )
 
-    # --- genre profile: fraction of ratings that are genre X ---
-    merged = ratings.merge(movies[['MovieID', 'Genres']], on='MovieID')
+    merged = ratings.merge(movies[["MovieID", "Genres"]], on="MovieID")
     genre_rows = []
-    for g in ALL_GENRES:
-        mask = merged['Genres'].str.contains(g, regex=False)
-        g_ratings = merged[mask].groupby('UserID').size().rename(g)
-        genre_rows.append(g_ratings)
+    for genre in ALL_GENRES:
+        mask = merged["Genres"].str.contains(genre, regex=False)
+        genre_rows.append(merged[mask].groupby("UserID").size().rename(genre))
 
     genre_df = pd.concat(genre_rows, axis=1).fillna(0)
-    # normalise to fraction
-    genre_df = genre_df.div(genre_df.sum(axis=1), axis=0).fillna(0)
-    genre_df = genre_df.reset_index()  # UserID back as column
+    genre_df = genre_df.div(genre_df.sum(axis=1), axis=0).fillna(0).reset_index()
 
-    # --- demographics ---
-    demo = users[['UserID', 'Gender', 'Age', 'Occupation']].copy()
-    demo['Gender'] = (demo['Gender'] == 'M').astype(int)   # M=1, F=0
+    demo = users[["UserID", "Gender", "Age", "Occupation"]].copy()
+    demo["Gender"] = (demo["Gender"] == "M").astype(int)
+    occ_dummies = pd.get_dummies(demo["Occupation"], prefix="occ")
+    demo = pd.concat([demo.drop("Occupation", axis=1), occ_dummies], axis=1)
 
-    # one-hot encode Occupation (21 categories)
-    occ_dummies = pd.get_dummies(demo['Occupation'], prefix='occ')
-    demo = pd.concat([demo.drop('Occupation', axis=1), occ_dummies], axis=1)
+    features = demo.merge(rating_stats, on="UserID").merge(genre_df, on="UserID")
+    return features.set_index("UserID")
 
-    # --- merge everything ---
-    features = (demo
-                .merge(rating_stats, on='UserID')
-                .merge(genre_df,     on='UserID'))
-
-    features = features.set_index('UserID')
-    return features
-
-
-# ---------------------------------------------------------------------------
-# Elbow + silhouette to find optimal K
-# ---------------------------------------------------------------------------
 
 def find_optimal_k(X_scaled: np.ndarray, k_range=range(2, 11)):
     inertias, silhouettes = [], []
@@ -87,35 +68,32 @@ def find_optimal_k(X_scaled: np.ndarray, k_range=range(2, 11)):
         km = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = km.fit_predict(X_scaled)
         inertias.append(km.inertia_)
-        silhouettes.append(silhouette_score(X_scaled, labels, sample_size=2000, random_state=42))
+        silhouettes.append(
+            silhouette_score(X_scaled, labels, sample_size=2000, random_state=42)
+        )
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    ax1.plot(list(k_range), inertias, "bo-")
+    ax1.set_xlabel("Number of Clusters (K)")
+    ax1.set_ylabel("Inertia")
+    ax1.set_title("Elbow Method")
 
-    ax1.plot(list(k_range), inertias, 'bo-')
-    ax1.set_xlabel('Number of Clusters (K)')
-    ax1.set_ylabel('Inertia')
-    ax1.set_title('Elbow Method')
+    ax2.plot(list(k_range), silhouettes, "rs-")
+    ax2.set_xlabel("Number of Clusters (K)")
+    ax2.set_ylabel("Silhouette Score")
+    ax2.set_title("Silhouette Score")
 
-    ax2.plot(list(k_range), silhouettes, 'rs-')
-    ax2.set_xlabel('Number of Clusters (K)')
-    ax2.set_ylabel('Silhouette Score')
-    ax2.set_title('Silhouette Score')
-
-    fig.suptitle('Optimal K Selection', fontsize=13)
+    fig.suptitle("Optimal K Selection", fontsize=13)
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, 'optimal_k.png')
-    fig.savefig(path, bbox_inches='tight', dpi=150)
+    path = os.path.join(PLOT_DIR, "optimal_k.png")
+    fig.savefig(path, bbox_inches="tight", dpi=150)
     plt.close(fig)
-    print(f"  saved → {path}")
+    print(f"  saved -> {path}")
 
-    best_k = list(k_range)[np.argmax(silhouettes)]
+    best_k = list(k_range)[int(np.argmax(silhouettes))]
     print(f"\nBest K by silhouette score: {best_k}  (score={max(silhouettes):.4f})")
     return best_k, inertias, silhouettes
 
-
-# ---------------------------------------------------------------------------
-# K-Means clustering
-# ---------------------------------------------------------------------------
 
 def run_kmeans(features: pd.DataFrame, n_clusters: int = 5):
     """Fit K-Means, attach cluster labels to features, return (features_with_labels, scaler)."""
@@ -125,43 +103,40 @@ def run_kmeans(features: pd.DataFrame, n_clusters: int = 5):
     km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     labels = km.fit_predict(X)
 
-    features = features.copy()
-    features['Cluster'] = labels
+    features_labeled = features.copy()
+    features_labeled["Cluster"] = labels
 
     score = silhouette_score(X, labels, sample_size=3000, random_state=42)
     print(f"K-Means  k={n_clusters}  |  Silhouette = {score:.4f}")
-    return features, scaler, km
+    return features_labeled, scaler, km
 
-
-# ---------------------------------------------------------------------------
-# Cluster profiling
-# ---------------------------------------------------------------------------
 
 def profile_clusters(features_labeled: pd.DataFrame, users: pd.DataFrame):
     """Print a readable summary of each cluster."""
     users_copy = users.copy()
-    users_copy['AgeLabel'] = users_copy['Age'].map(AGE_MAP)
-    users_copy['OccupationLabel'] = users_copy['Occupation'].map(OCCUPATION_MAP)
-    users_copy['Gender'] = users_copy['Gender'].map({'M': 'Male', 'F': 'Female'})
+    users_copy["AgeLabel"] = users_copy["Age"].map(AGE_MAP)
+    users_copy["OccupationLabel"] = users_copy["Occupation"].map(OCCUPATION_MAP)
+    users_copy["Gender"] = users_copy["Gender"].map({"M": "Male", "F": "Female"})
 
-    merged = features_labeled[['mean_rating', 'num_ratings', 'Cluster']].merge(
-        users_copy[['UserID', 'Gender', 'AgeLabel', 'OccupationLabel']],
-        left_index=True, right_on='UserID'
+    merged = features_labeled[["mean_rating", "num_ratings", "Cluster"]].merge(
+        users_copy[["UserID", "Gender", "AgeLabel", "OccupationLabel"]],
+        left_index=True,
+        right_on="UserID",
     )
 
-    genre_cols = [g for g in ALL_GENRES if g in features_labeled.columns]
+    genre_cols = [genre for genre in ALL_GENRES if genre in features_labeled.columns]
 
     print("\n" + "=" * 60)
     print("CLUSTER PROFILES")
     print("=" * 60)
-    for cid in sorted(features_labeled['Cluster'].unique()):
-        subset = merged[merged['Cluster'] == cid]
-        fl_sub = features_labeled[features_labeled['Cluster'] == cid]
+    for cid in sorted(features_labeled["Cluster"].unique()):
+        subset = merged[merged["Cluster"] == cid]
+        fl_sub = features_labeled[features_labeled["Cluster"] == cid]
 
         top_genres = fl_sub[genre_cols].mean().sort_values(ascending=False).head(3)
-        top_occ = subset['OccupationLabel'].value_counts().index[0]
-        top_gender = subset['Gender'].value_counts().index[0]
-        top_age = subset['AgeLabel'].value_counts().index[0]
+        top_occ = subset["OccupationLabel"].value_counts().index[0]
+        top_gender = subset["Gender"].value_counts().index[0]
+        top_age = subset["AgeLabel"].value_counts().index[0]
 
         print(f"\nCluster {cid}  ({len(subset):,} users)")
         print(f"  Avg rating   : {subset['mean_rating'].mean():.2f}")
@@ -172,60 +147,80 @@ def profile_clusters(features_labeled: pd.DataFrame, users: pd.DataFrame):
         print(f"  Top genres      : {', '.join(top_genres.index.tolist())}")
 
 
-# ---------------------------------------------------------------------------
-# Visualise clusters with PCA (2-D)
-# ---------------------------------------------------------------------------
-
 def plot_clusters_pca(features_labeled: pd.DataFrame):
-    feat_cols = [c for c in features_labeled.columns if c != 'Cluster']
+    feat_cols = [column for column in features_labeled.columns if column != "Cluster"]
     X = StandardScaler().fit_transform(features_labeled[feat_cols].values)
     coords = PCA(n_components=2, random_state=42).fit_transform(X)
 
-    df_plot = pd.DataFrame({
-        'PC1': coords[:, 0],
-        'PC2': coords[:, 1],
-        'Cluster': features_labeled['Cluster'].astype(str)
-    })
+    df_plot = pd.DataFrame(
+        {
+            "PC1": coords[:, 0],
+            "PC2": coords[:, 1],
+            "Cluster": features_labeled["Cluster"].astype(str),
+        }
+    )
 
     fig, ax = plt.subplots(figsize=(9, 6))
-    palette = sns.color_palette('tab10', n_colors=df_plot['Cluster'].nunique())
-    sns.scatterplot(data=df_plot, x='PC1', y='PC2', hue='Cluster',
-                    palette=palette, alpha=0.5, s=15, ax=ax)
-    ax.set_title('User Clusters (PCA 2-D Projection)', fontsize=13)
-    ax.legend(title='Cluster', bbox_to_anchor=(1.05, 1), loc='upper left')
+    palette = sns.color_palette("tab10", n_colors=df_plot["Cluster"].nunique())
+    sns.scatterplot(
+        data=df_plot,
+        x="PC1",
+        y="PC2",
+        hue="Cluster",
+        palette=palette,
+        alpha=0.5,
+        s=15,
+        ax=ax,
+    )
+    ax.set_title("User Clusters (PCA 2-D Projection)", fontsize=13)
+    ax.legend(title="Cluster", bbox_to_anchor=(1.05, 1), loc="upper left")
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, 'cluster_pca.png')
-    fig.savefig(path, bbox_inches='tight', dpi=150)
+    path = os.path.join(PLOT_DIR, "cluster_pca.png")
+    fig.savefig(path, bbox_inches="tight", dpi=150)
     plt.close(fig)
-    print(f"  saved → {path}")
+    print(f"  saved -> {path}")
 
-
-# ---------------------------------------------------------------------------
-# Genre heatmap per cluster
-# ---------------------------------------------------------------------------
 
 def plot_genre_heatmap(features_labeled: pd.DataFrame):
-    genre_cols = [g for g in ALL_GENRES if g in features_labeled.columns]
-    cluster_genre = (features_labeled.groupby('Cluster')[genre_cols]
-                                     .mean()
-                                     .T)
+    genre_cols = [genre for genre in ALL_GENRES if genre in features_labeled.columns]
+    cluster_genre = features_labeled.groupby("Cluster")[genre_cols].mean().T
 
     fig, ax = plt.subplots(figsize=(10, 7))
-    sns.heatmap(cluster_genre, annot=True, fmt='.2f', cmap='YlOrRd',
-                linewidths=0.5, ax=ax)
-    ax.set_title('Average Genre Profile per Cluster', fontsize=13)
-    ax.set_xlabel('Cluster')
-    ax.set_ylabel('Genre')
+    sns.heatmap(cluster_genre, annot=True, fmt=".2f", cmap="YlOrRd", linewidths=0.5, ax=ax)
+    ax.set_title("Average Genre Profile per Cluster", fontsize=13)
+    ax.set_xlabel("Cluster")
+    ax.set_ylabel("Genre")
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, 'genre_heatmap.png')
-    fig.savefig(path, bbox_inches='tight', dpi=150)
+    path = os.path.join(PLOT_DIR, "genre_heatmap.png")
+    fig.savefig(path, bbox_inches="tight", dpi=150)
     plt.close(fig)
-    print(f"  saved → {path}")
+    print(f"  saved -> {path}")
 
 
-# ---------------------------------------------------------------------------
-# Assign a new user to the nearest cluster (cold-start helper)
-# ---------------------------------------------------------------------------
+def plot_cluster_sizes(features_labeled: pd.DataFrame) -> pd.DataFrame:
+    cluster_sizes = (
+        features_labeled["Cluster"]
+        .value_counts()
+        .sort_index()
+        .rename_axis("cluster_id")
+        .reset_index(name="user_count")
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    sns.barplot(data=cluster_sizes, x="cluster_id", y="user_count", color="steelblue", ax=ax)
+    ax.set_xlabel("Cluster")
+    ax.set_ylabel("Users")
+    ax.set_title("Cluster Sizes")
+    for idx, value in enumerate(cluster_sizes["user_count"]):
+        ax.text(idx, value, f"{int(value)}", ha="center", va="bottom", fontsize=9)
+    fig.tight_layout()
+
+    path = os.path.join(PLOT_DIR, "cluster_sizes.png")
+    fig.savefig(path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+    print(f"  saved -> {path}")
+    return cluster_sizes
+
 
 def assign_cluster(new_user_features: np.ndarray, scaler: StandardScaler, km: KMeans) -> int:
     """
@@ -236,25 +231,20 @@ def assign_cluster(new_user_features: np.ndarray, scaler: StandardScaler, km: KM
     return int(km.predict(x)[0])
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def run_clustering():
     print("Loading data...")
     ratings = load_ratings()
-    users   = load_users()
+    users = load_users()
 
     print("Building user feature matrix...")
     features = build_user_features(ratings, users)
     print(f"  Feature matrix shape: {features.shape}")
 
-    # Scale for K-selection
     scaler_tmp = StandardScaler()
     X_scaled = scaler_tmp.fit_transform(features.values)
 
     print("\nSearching for optimal K...")
-    best_k, _, _ = find_optimal_k(X_scaled)
+    best_k, inertias, silhouettes = find_optimal_k(X_scaled)
 
     print(f"\nRunning K-Means with k={best_k}...")
     features_labeled, scaler, km = run_kmeans(features, n_clusters=best_k)
@@ -264,20 +254,40 @@ def run_clustering():
     print("\nGenerating cluster visualisations...")
     plot_clusters_pca(features_labeled)
     plot_genre_heatmap(features_labeled)
+    cluster_sizes = plot_cluster_sizes(features_labeled)
 
     print("\nClustering complete.")
-    return features_labeled, scaler, km
+    return features_labeled, scaler, km, best_k, inertias, silhouettes, cluster_sizes
 
 
 def run_clustering_and_save_artifacts():
     """Run clustering and persist fallback artifacts for the app and CLI."""
-    features_labeled, scaler, km = run_clustering()
+    (
+        features_labeled,
+        scaler,
+        km,
+        best_k,
+        inertias,
+        silhouettes,
+        cluster_sizes,
+    ) = run_clustering()
     ratings = load_ratings()
     cluster_summary = build_cluster_summary(features_labeled, ratings)
     save_joblib("cluster_summary.joblib", cluster_summary)
     save_joblib("cluster_model.joblib", {"scaler": scaler, "model": km})
+
+    metrics_df = pd.DataFrame(
+        {
+            "k": list(range(2, 2 + len(inertias))),
+            "inertia": inertias,
+            "silhouette": silhouettes,
+        }
+    )
+    metrics_df["is_selected"] = metrics_df["k"] == int(best_k)
+    save_csv("clustering_metrics.csv", metrics_df)
+    save_csv("cluster_sizes.csv", cluster_sizes)
     return features_labeled, scaler, km
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_clustering()

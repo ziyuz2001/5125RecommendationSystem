@@ -51,3 +51,9 @@ def save_json(name: str, payload: dict[str, Any]) -> Path:
 def load_json(name: str) -> dict[str, Any]:
     with artifact_path(name).open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def save_text(name: str, text: str) -> Path:
+    path = artifact_path(name)
+    path.write_text(text, encoding="utf-8")
+    return path
