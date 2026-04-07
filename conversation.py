@@ -50,8 +50,6 @@ def parse_preferences(text: str, classifier) -> dict[str, object]:
         "clauses": [],
         "positive_genres": [],
         "negative_genres": [],
-        "positive_keywords": [],
-        "negative_keywords": [],
     }
 
     if not clauses:

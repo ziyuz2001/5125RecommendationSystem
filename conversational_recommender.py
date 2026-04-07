@@ -7,7 +7,7 @@ from data_loader import load_movies
 
 
 def choose_recommendation_mode(parsed: dict[str, object]) -> str:
-    if parsed["positive_genres"] or parsed["positive_keywords"]:
+    if parsed["positive_genres"]:
         return "primary"
     return "cluster_fallback"
 
