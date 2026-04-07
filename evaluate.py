@@ -288,11 +288,29 @@ def _build_error_report(scored_frames: list[pd.DataFrame], top_n: int = 25) -> p
     return pd.concat(error_rows, ignore_index=True)
 
 
+def _sample_benchmark_users(
+    test_df: pd.DataFrame,
+    max_users: int | None,
+    random_state: int,
+) -> pd.DataFrame:
+    if max_users is None:
+        return test_df
+
+    user_ids = sorted(test_df["UserID"].unique())
+    if len(user_ids) <= max_users:
+        return test_df
+
+    rng = np.random.default_rng(random_state)
+    selected_users = sorted(rng.choice(user_ids, size=max_users, replace=False).tolist())
+    return test_df[test_df["UserID"].isin(selected_users)].reset_index(drop=True)
+
+
 def run_evaluation(
     k: int = 10,
     threshold: float = 3.5,
     test_size: float = 0.2,
     random_state: int = 42,
+    max_users: int | None = 50,
 ) -> dict[str, object]:
     """
     Run the frozen-split recommender benchmark and persist artifacts.
@@ -300,6 +318,7 @@ def run_evaluation(
 
     train_df, test_df = build_holdout_split(test_size=test_size, random_state=random_state)
     save_split_artifact(train_df, test_df)
+    benchmark_test_df = _sample_benchmark_users(test_df, max_users=max_users, random_state=random_state)
 
     movies = load_movies()
     content_artifact = build_content_artifact(movies)
@@ -315,7 +334,7 @@ def run_evaluation(
     scored_frames: list[pd.DataFrame] = []
     metrics_rows: list[dict[str, object]] = []
     for model_name in ["svd", "knn", "content", "hybrid"]:
-        scored_df = _score_holdout_items(train_df, test_df, model_name, model_bundle)
+        scored_df = _score_holdout_items(train_df, benchmark_test_df, model_name, model_bundle)
         scored_frames.append(scored_df)
 
         metrics = compute_recommendation_metrics(scored_df, k=k, threshold=threshold)
@@ -342,6 +361,7 @@ def run_evaluation(
     return {
         "train_df": train_df,
         "test_df": test_df,
+        "benchmark_test_df": benchmark_test_df,
         "metrics": metrics_df,
         "errors": errors_df,
         "winners": winners,

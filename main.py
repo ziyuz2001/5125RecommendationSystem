@@ -17,13 +17,14 @@ import os
 # ── project modules ──────────────────────────────────────────────────────────
 from data_loader  import build_database, load_ratings, load_movies, load_users
 from eda          import run_eda
-from clustering   import build_user_features, run_clustering
+from clustering   import build_user_features, run_clustering_and_save_artifacts
 from recommender  import (
     SVDRecommender, KNNRecommender,
     build_content_model,
     top_n_content, top_n_hybrid, top_n_for_cluster
 )
 from evaluate     import run_evaluation
+from text_classifier import run_classification_pipeline
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ def step_eda():
 
 def step_clustering():
     section("STEP 2 – User Clustering (K-Means)")
-    features_labeled, scaler, km = run_clustering()
+    features_labeled, scaler, km = run_clustering_and_save_artifacts()
     return features_labeled, scaler, km
 
 
@@ -106,11 +107,21 @@ def step_evaluate():
     run_evaluation()
 
 
+def step_classify():
+    section("STEP 5 – Train Clause Polarity Classifier")
+    run_classification_pipeline()
+
+
+def step_benchmark():
+    section("STEP 6 – Benchmark Recommenders and Save Artifacts")
+    run_evaluation()
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description='MovieLens 1M Recommendation System')
-    parser.add_argument('--step', choices=['all', 'db', 'eda', 'cluster', 'recommend', 'evaluate'],
+    parser.add_argument('--step', choices=['all', 'db', 'eda', 'cluster', 'recommend', 'evaluate', 'classify', 'benchmark'],
                         default='all', help='Which pipeline step to run')
     parser.add_argument('--user', type=int, default=1,
                         help='User ID for recommendation demo')
@@ -132,6 +143,12 @@ def main():
 
     if args.step in ('all', 'evaluate'):
         step_evaluate()
+
+    if args.step in ('all', 'classify'):
+        step_classify()
+
+    if args.step in ('all', 'benchmark'):
+        step_benchmark()
 
     print("\nDone. Plots are in ./plots/  |  Database is movielens.db")
 

@@ -152,7 +152,7 @@ class KNNRecommender:
 
         self.knn = NearestNeighbors(
             n_neighbors=min(self.k + 1, self.matrix.shape[0]),
-            metric='cosine', algorithm='brute', n_jobs=-1
+            metric='cosine', algorithm='brute', n_jobs=1
         )
         self.knn.fit(self.matrix)
         mode = 'user' if self.user_based else 'item'
@@ -363,14 +363,17 @@ def top_n_for_cluster(cluster_id: int, features_labeled: pd.DataFrame,
     cluster_users   = features_labeled[features_labeled['Cluster'] == cluster_id].index
     cluster_ratings = ratings[ratings['UserID'].isin(cluster_users)]
 
-    top = (cluster_ratings.groupby('MovieID')
-                          .agg(AvgRating=('Rating', 'mean'),
-                               NumRatings=('Rating', 'count'))
-                          .query('NumRatings >= 10')
-                          .sort_values('AvgRating', ascending=False)
-                          .head(n)
-                          .reset_index()
-                          .merge(movies[['MovieID', 'Title', 'Genres']], on='MovieID'))
+    ranked = (cluster_ratings.groupby('MovieID')
+                             .agg(AvgRating=('Rating', 'mean'),
+                                  NumRatings=('Rating', 'count'))
+                             .sort_values(['AvgRating', 'NumRatings'], ascending=False))
+    filtered = ranked[ranked['NumRatings'] >= 10]
+    if filtered.empty:
+        filtered = ranked
+
+    top = (filtered.head(n)
+                  .reset_index()
+                  .merge(movies[['MovieID', 'Title', 'Genres']], on='MovieID'))
     return top[['MovieID', 'Title', 'Genres', 'AvgRating', 'NumRatings']]
 
 

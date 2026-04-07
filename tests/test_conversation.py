@@ -1,4 +1,5 @@
 from conversation import split_clauses, extract_genres, parse_preferences
+from pathlib import Path
 
 
 class FakeClassifier:
@@ -73,3 +74,32 @@ def test_parse_preferences_raises_on_label_count_mismatch():
         assert "labels" in str(exc)
     else:
         raise AssertionError("Expected ValueError for mismatched label count")
+
+
+def test_app_module_imports():
+    import app  # noqa: F401
+
+
+def test_main_accepts_classify_and_benchmark_steps(monkeypatch):
+    import main as main_module
+
+    calls = []
+    monkeypatch.setattr(main_module, "step_classify", lambda: calls.append("classify"))
+    monkeypatch.setattr(main_module, "step_benchmark", lambda: calls.append("benchmark"))
+
+    monkeypatch.setattr("sys.argv", ["main.py", "--step", "classify"])
+    main_module.main()
+    assert calls == ["classify"]
+
+    calls.clear()
+    monkeypatch.setattr("sys.argv", ["main.py", "--step", "benchmark"])
+    main_module.main()
+    assert calls == ["benchmark"]
+
+
+def test_readme_mentions_conversational_flow_and_classification():
+    text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "conversational" in text.lower()
+    assert "classification" in text.lower()
+    assert "streamlit run app.py" in text

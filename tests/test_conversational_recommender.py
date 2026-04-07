@@ -2,15 +2,24 @@ from pathlib import Path
 
 import pandas as pd
 
+import clustering
+import conversational_recommender
+from conversational_recommender import (
+    choose_recommendation_mode,
+    recommend_from_preferences,
+    score_movies_from_genres,
+)
 from evaluate import build_holdout_split
 from evaluate import compute_recommendation_metrics
 from evaluate import choose_recommender_winners
 from evaluate import save_split_artifact
 from artifact_store import load_joblib
 from recommender import (
+    KNNRecommender,
     SVDRecommender,
     build_cluster_summary,
     build_content_artifact,
+    top_n_for_cluster,
 )
 
 
@@ -57,6 +66,21 @@ def test_svd_recommender_handles_single_movie_matrix():
     model.fit(ratings)
 
     assert model.predict(2, 11) >= 1.0
+
+
+def test_knn_recommender_can_predict_on_tiny_dataset():
+    ratings = pd.DataFrame(
+        {
+            "UserID": [1, 1, 2, 2, 3, 3],
+            "MovieID": [11, 12, 11, 12, 11, 12],
+            "Rating": [4.0, 5.0, 2.0, 3.0, 5.0, 4.0],
+        }
+    )
+
+    model = KNNRecommender(k=2, user_based=False)
+    model.fit(ratings)
+
+    assert model.predict(1, 11) >= 1.0
 
 
 def test_build_content_artifact_returns_expected_mapping():
@@ -163,3 +187,109 @@ def test_choose_recommender_winners_tracks_overall_and_app_models(monkeypatch, t
     assert winners["overall_winner"] == "svd"
     assert winners["app_winner"] == "hybrid"
     assert (artifact_dir / "recommender_selection.json").exists()
+
+
+def test_top_n_for_cluster_returns_ranked_movies():
+    features_labeled = pd.DataFrame({"Cluster": [0, 0]}, index=[1, 2])
+    ratings = pd.DataFrame(
+        {
+            "UserID": [1, 1, 2, 2],
+            "MovieID": [10, 11, 10, 12],
+            "Rating": [5, 4, 4, 5],
+        }
+    )
+    movies = pd.DataFrame(
+        {
+            "MovieID": [10, 11, 12],
+            "Title": ["A", "B", "C"],
+            "Genres": ["Sci-Fi", "Drama", "Action"],
+        }
+    )
+
+    result = top_n_for_cluster(0, features_labeled, ratings, movies, n=2)
+
+    assert len(result) > 0
+
+
+def test_run_clustering_and_save_artifacts_persists_cluster_outputs(monkeypatch, tmp_path):
+    import artifact_store
+
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    monkeypatch.setattr(artifact_store, "ARTIFACT_DIR", artifact_dir)
+
+    features_labeled = pd.DataFrame(
+        {"Cluster": [0, 1]},
+        index=pd.Index([1, 2], name="UserID"),
+    )
+    scaler = {"name": "scaler"}
+    model = {"name": "kmeans"}
+    ratings = pd.DataFrame(
+        {
+            "UserID": [1, 1, 2],
+            "MovieID": [10, 11, 10],
+            "Rating": [4.0, 5.0, 3.0],
+        }
+    )
+
+    monkeypatch.setattr(clustering, "run_clustering", lambda: (features_labeled, scaler, model))
+    monkeypatch.setattr(clustering, "load_ratings", lambda: ratings)
+
+    returned = clustering.run_clustering_and_save_artifacts()
+    saved_summary = load_joblib("cluster_summary.joblib")
+    saved_model = load_joblib("cluster_model.joblib")
+
+    assert returned == (features_labeled, scaler, model)
+    pd.testing.assert_frame_equal(saved_summary, build_cluster_summary(features_labeled, ratings))
+    assert saved_model == {"scaler": scaler, "model": model}
+
+
+def test_choose_recommendation_mode_uses_primary_when_positive_genres_exist():
+    mode = choose_recommendation_mode(
+        {
+            "positive_genres": ["Sci-Fi"],
+            "negative_genres": ["Horror"],
+            "positive_keywords": [],
+            "negative_keywords": [],
+        }
+    )
+
+    assert mode == "primary"
+
+
+def test_score_movies_from_genres_prefers_matching_titles():
+    movies = pd.DataFrame(
+        {
+            "MovieID": [1, 2],
+            "Title": ["Space Movie", "Ghost Movie"],
+            "Genres": ["Sci-Fi|Adventure", "Horror|Thriller"],
+        }
+    )
+
+    ranked = score_movies_from_genres(movies, ["Sci-Fi"], ["Horror"])
+
+    assert ranked.iloc[0]["MovieID"] == 1
+
+
+def test_recommend_from_preferences_uses_primary_ranking(monkeypatch):
+    movies = pd.DataFrame(
+        {
+            "MovieID": [1, 2],
+            "Title": ["Space Movie", "Ghost Movie"],
+            "Genres": ["Sci-Fi|Adventure", "Horror|Thriller"],
+        }
+    )
+    parsed = {
+        "positive_genres": ["Sci-Fi"],
+        "negative_genres": ["Horror"],
+        "positive_keywords": [],
+        "negative_keywords": [],
+    }
+
+    monkeypatch.setattr(conversational_recommender, "load_json", lambda _: {"app_winner": "content"})
+    monkeypatch.setattr(conversational_recommender, "load_movies", lambda: movies)
+
+    ranked = recommend_from_preferences(parsed, n=2)
+
+    assert ranked.iloc[0]["MovieID"] == 1
+    assert set(ranked["source_model"]) == {"content"}
